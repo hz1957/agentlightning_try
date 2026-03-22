@@ -22,8 +22,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
+from contextlib import closing
 from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pandas as pd
@@ -31,14 +34,47 @@ from sql_agent import LitSQLAgent
 
 import agentlightning as agl
 
+EXAMPLE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = EXAMPLE_DIR.parent.parent
+LAUNCH_CWD = Path.cwd().resolve()
+
+
+def _resolve_spider_data_dir() -> Path:
+    """Resolve the Spider data directory before changing the process working directory."""
+    configured = os.environ.get("VERL_SPIDER_DATA_DIR")
+    if configured:
+        configured_path = Path(configured)
+        if not configured_path.is_absolute():
+            configured_path = (LAUNCH_CWD / configured_path).resolve()
+        return configured_path
+    return (EXAMPLE_DIR / "data").resolve()
+
+
+SPIDER_DATA_DIR = _resolve_spider_data_dir()
+os.environ["VERL_SPIDER_DATA_DIR"] = str(SPIDER_DATA_DIR)
+# Reuse the already-active project environment for local Ray workers instead of
+# letting Ray re-run `uv` inside its packaged working_dir.
+os.environ.setdefault("RAY_ENABLE_UV_RUN_RUNTIME_ENV", "0")
+
+
+def _resolve_store_port() -> int:
+    """Choose a free local store port unless the caller pinned one explicitly."""
+    configured = os.environ.get("AGL_SERVER_PORT")
+    if configured:
+        return int(configured)
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
         "use_kl_in_reward": False,
     },
     "data": {
-        "train_files": "data/train_spider.parquet",
-        "val_files": "data/test_dev_500.parquet",
+        "train_files": str(SPIDER_DATA_DIR / "train_spider.parquet"),
+        "val_files": str(SPIDER_DATA_DIR / "test_dev_500.parquet"),
         "train_batch_size": 32,
         "max_prompt_length": 4096,
         "max_response_length": 2048,
@@ -121,7 +157,7 @@ def config_train_fast() -> Dict[str, Any]:
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
     config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
-    config["data"]["val_files"] = "data/test_dev.parquet"
+    config["data"]["val_files"] = str(SPIDER_DATA_DIR / "test_dev.parquet")
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["total_training_steps"] = 1
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
@@ -167,9 +203,21 @@ def config_train_llama() -> Dict[str, Any]:
 def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     """Train the SQL agent with the given configuration."""
 
+    if Path.cwd().resolve() != REPO_ROOT:
+        os.chdir(REPO_ROOT)
+        print(f"Changed working directory to repo root: {REPO_ROOT}")
+
+    store_port = _resolve_store_port()
+    print(f"Using LightningStore port: {store_port}")
+
     agent = LitSQLAgent()
     algorithm = agl.VERL(config)
-    trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter={"agent_match": active_agent})
+    trainer = agl.Trainer(
+        n_runners=10,
+        algorithm=algorithm,
+        adapter={"agent_match": active_agent},
+        port=store_port,
+    )
     print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
 
     train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore

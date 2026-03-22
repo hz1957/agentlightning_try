@@ -1,0 +1,29 @@
+services:
+  spider-gpu:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.spider.gpu
+    working_dir: /app
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+      VERL_SPIDER_DATA_DIR: /app/examples/spider/data
+      HF_HOME: /root/.cache/huggingface
+      HUGGINGFACE_HUB_CACHE: /root/.cache/huggingface/hub
+      WANDB_API_KEY: ${WANDB_API_KEY:-}
+      WANDB_MODE: ${WANDB_MODE:-online}
+      HF_TOKEN: ${HF_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-dummy}
+      AGL_SERVER_PORT: ${AGL_SERVER_PORT:-4747}
+      RAY_ENABLE_UV_RUN_RUNTIME_ENV: "0"
+    volumes:
+      - ..:/app
+      - ../examples/spider/data:/app/examples/spider/data
+      - ../.cache_hf:/root/.cache/huggingface
+      - ../.cache_uv_docker:/root/.cache/uv
+    gpus: all
+    ipc: host
+    shm_size: "16gb"
+    stdin_open: true
+    tty: true
+    command: sleep infinity

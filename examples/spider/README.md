@@ -37,6 +37,21 @@ Train a SQL agent using the Qwen2.5-Coder-1.5B-Instruct model with the following
 python train_sql_agent.py qwen
 ```
 
+For a Docker-based training setup on a Linux NVIDIA GPU host:
+
+```bash
+./scripts/spider_docker_gpu.sh up
+./scripts/spider_docker_gpu.sh train
+```
+
+The `train` helper runs the following command inside the container:
+
+```bash
+cd examples/spider && ~/.local/bin/uv run --no-sync python train_sql_agent.py qwen --active-agent write
+```
+
+This container workflow requires a Linux host with at least one NVIDIA CUDA GPU.
+
 If you want to use an NPU for training, please refer to the **Launch Training with NPUS** section in [How to Train a SQL Agent](../../docs/how-to/train-sql-agent.md).
 
 ### Debugging
