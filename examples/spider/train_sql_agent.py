@@ -200,6 +200,27 @@ def config_train_llama() -> Dict[str, Any]:
     return config
 
 
+def apply_cli_overrides(config: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    """Apply optional command-line overrides to the training config."""
+
+    trainer_config = config["trainer"]
+
+    if args.total_epochs is not None:
+        trainer_config["total_epochs"] = args.total_epochs
+    if args.total_training_steps is not None:
+        trainer_config["total_training_steps"] = args.total_training_steps
+    if args.save_freq is not None:
+        trainer_config["save_freq"] = args.save_freq
+    if args.test_freq is not None:
+        trainer_config["test_freq"] = args.test_freq
+    if args.project_name is not None:
+        trainer_config["project_name"] = args.project_name
+    if args.experiment_name is not None:
+        trainer_config["experiment_name"] = args.experiment_name
+
+    return config
+
+
 def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     """Train the SQL agent with the given configuration."""
 
@@ -240,6 +261,20 @@ def main() -> None:
     parser.add_argument(
         "--active-agent", type=str, help="Override the active agent name (default: auto-generated based on config)"
     )
+    parser.add_argument("--total-epochs", type=int, help="Override trainer.total_epochs for shorter or longer runs")
+    parser.add_argument(
+        "--total-training-steps",
+        type=int,
+        help="Override trainer.total_training_steps to run a small smoke test or cap training length",
+    )
+    parser.add_argument(
+        "--save-freq",
+        type=int,
+        help="Save a checkpoint every N training steps; positive values enable checkpointing",
+    )
+    parser.add_argument("--test-freq", type=int, help="Override trainer.test_freq")
+    parser.add_argument("--project-name", type=str, help="Override trainer.project_name")
+    parser.add_argument("--experiment-name", type=str, help="Override trainer.experiment_name")
 
     args = parser.parse_args()
 
@@ -251,12 +286,24 @@ def main() -> None:
         "npu": config_train_npu,
     }
     config = config_functions[args.config]()
+    config = apply_cli_overrides(config, args)
 
     # Set active agent - use provided value or default based on config choice
     active_agent = args.active_agent
 
     print(f"Starting training with '{args.config}' configuration...")
     print(f"Active agent: {active_agent}")
+    print(
+        "Trainer overrides:",
+        {
+            "project_name": config["trainer"]["project_name"],
+            "experiment_name": config["trainer"]["experiment_name"],
+            "total_epochs": config["trainer"]["total_epochs"],
+            "total_training_steps": config["trainer"].get("total_training_steps"),
+            "test_freq": config["trainer"]["test_freq"],
+            "save_freq": config["trainer"].get("save_freq", -1),
+        },
+    )
 
     train(config, active_agent)
 
